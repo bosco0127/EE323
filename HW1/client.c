@@ -6,11 +6,14 @@
 #include <unistd.h>
 #include <string.h>
 
+#define MAX_SIZE 9999992
+
 typedef struct packet {
     unsigned short op;
     unsigned short shift;
     unsigned int length;
-    char string[4];
+    char string[MAX_SIZE];
+    //char *string;
 } Packet;
 
 int main(int argc, char* argv[])
@@ -21,8 +24,8 @@ int main(int argc, char* argv[])
     // server socket address
     struct sockaddr_in server_address;
     // Packet
-    Packet p_write;
-    Packet p_read;
+    Packet *p_write = (Packet *) malloc(sizeof(Packet));
+    Packet *p_read = (Packet *) malloc(sizeof(Packet));
     /* char write_message[11]={0x00,0x00,0x01,0x00,
     0x00,0x00,0x00,0x0B,
     0x61,0x62,0x63};
@@ -32,6 +35,9 @@ int main(int argc, char* argv[])
     int read_len;
     // option variable
     char opt;
+    // loop variable
+    char c; // store stdin string
+    int string_length = 0; // initilized as 0.
 
     // 0-1 Separate options
     // check if all options are involved.
@@ -52,10 +58,10 @@ int main(int argc, char* argv[])
                 server_address.sin_port=htons(atoi(optarg)); // Port no.
                 break;
             case 'o':
-                p_write.op = (short) atoi(optarg); // op type.
+                p_write->op = (short) atoi(optarg); // op type.
                 break;
             case 's':
-                p_write.shift = (short) atoi(optarg); // shift number.
+                p_write->shift = (short) atoi(optarg); // shift number.
                 break;
             case '?':
                 fprintf(stderr,"only -h -p -o -s is allowed for options\n");
@@ -71,8 +77,20 @@ int main(int argc, char* argv[])
 
     // for test
     // initialize Packet
-    p_write.length=htonl(sizeof(p_write));
-    strcpy(p_write.string, "abc");
+    // strcpy(p_write.string, "abc");
+    //p_write->string = (char *) malloc(MAX_SIZE*sizeof(char));
+    //p_read->string = (char *) malloc(MAX_SIZE*sizeof(char));
+    while(string_length < MAX_SIZE) {
+        c = getchar();
+        if(c == EOF) {
+            break;
+        }
+        p_write->string[string_length] = c;
+        string_length++;
+    }
+    p_write->length=htonl((size_t) (string_length+8));
+    //printf("%s",p_write->string);
+
     
     // 1. socket
     // creates socket with error handling.
@@ -91,22 +109,26 @@ int main(int argc, char* argv[])
     }
 
     // 3. write
-    write_len = write(client_socket, &p_write, sizeof(p_write));
+    write_len = write(client_socket, p_write, (size_t) (string_length+8));
     if(write_len==-1) {
         fprintf(stderr,"send() error\n");
         assert(0);
     }
 
     // 4. read
-    read_len = read(client_socket, &p_read, sizeof(p_read));
+    read_len = read(client_socket, p_read, (size_t) (string_length+8));
     if(read_len==-1) {
         fprintf(stderr,"recv() error\n");
         assert(0);
     }
     // print result to stdout
-    printf("server : %s \n", p_read.string);
+    printf("%s", p_read->string);
     
     // 5. close
+    /*free(p_write->string);
+    free(p_read->string);
+    free(p_write);
+    free(p_read);*/
     close(client_socket);
     return 0;
 }
