@@ -117,7 +117,7 @@ int main(int argc, char* argv[])
         }
         else if(read_len==0) {
             fprintf(stderr,"server disconnected\n");
-            assert(0);
+            break;
         }
         // print result to stdout
         for(int i = 0; i < string_length; i++)
