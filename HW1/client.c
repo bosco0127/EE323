@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define MAX_SIZE 9999992
+#define MAX_SIZE 2500
 
 typedef struct packet {
     unsigned short op;
@@ -89,8 +89,6 @@ int main(int argc, char* argv[])
         string_length++;
     }
     p_write->length=htonl((size_t) (string_length+8));
-    //printf("%s",p_write->string);
-
     
     // 1. socket
     // creates socket with error handling.
@@ -101,28 +99,56 @@ int main(int argc, char* argv[])
     }
 
     // 2. connect
-    
     // connect with error handling.
     if(connect(client_socket,(struct sockaddr*) &server_address, sizeof(server_address))==-1) {
         fprintf(stderr,"connect() error\n");
         assert(0);
     }
 
-    // 3. write
-    write_len = write(client_socket, p_write, (size_t) (string_length+8));
-    if(write_len==-1) {
-        fprintf(stderr,"send() error\n");
-        assert(0);
-    }
+    // loop for data transmition.
+    while(1){
+        // get c until string length becomes MAX_SIZE
+        while(string_length < MAX_SIZE) {
+            c = fgetc(stdin);
+            // break if EOF
+            if(c == EOF) {
+                break;
+            }
+            // put it into string buffer.
+            p_write->string[string_length] = c;
+            // increase string length
+            string_length++;
+        }
+        // write length into Network Byte order.
+        p_write->length=htonl((size_t) (string_length+8));
+        // 3. write
+        write_len = write(client_socket, p_write, (size_t) (string_length+8));
+        if(write_len==-1) {
+            fprintf(stderr,"send() error\n");
+            assert(0);
+        }
 
-    // 4. read
-    read_len = read(client_socket, p_read, (size_t) (string_length+8));
-    if(read_len==-1) {
-        fprintf(stderr,"recv() error\n");
-        assert(0);
+        // 4. read
+        read_len = read(client_socket, p_read, (size_t) (string_length+8));
+        if(read_len==-1) {
+            fprintf(stderr,"recv() error\n");
+            assert(0);
+        }
+        // print result to stdout
+        for(int i = 0; i < string_length; i++)
+            fprintf(stdout,"%c", p_read->string[i]);
+
+        // break if EOF
+        if(c == EOF) {
+            break;
+        }
+
+        // reset p_write->string, p_read->string, string_length
+        memset(p_write->string,0,sizeof(p_write->string));
+        memset(p_read->string,0,sizeof(p_read->string));
+        string_length = 0;
     }
-    // print result to stdout
-    printf("%s", p_read->string);
+    
     
     // 5. close
     free(p_write);
