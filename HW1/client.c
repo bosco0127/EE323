@@ -125,10 +125,8 @@ int main(int argc, char* argv[])
     printf("%s", p_read->string);
     
     // 5. close
-    /*free(p_write->string);
-    free(p_read->string);
     free(p_write);
-    free(p_read);*/
+    free(p_read);
     close(client_socket);
     return 0;
 }
