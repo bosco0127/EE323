@@ -26,10 +26,6 @@ int main(int argc, char* argv[])
     // Packet
     Packet *p_write = (Packet *) malloc(sizeof(Packet));
     Packet *p_read = (Packet *) malloc(sizeof(Packet));
-    /* char write_message[11]={0x00,0x00,0x01,0x00,
-    0x00,0x00,0x00,0x0B,
-    0x61,0x62,0x63};
-    char read_message[15]; */
     // packet length
     int write_len;
     int read_len;
@@ -72,23 +68,7 @@ int main(int argc, char* argv[])
                 assert(0);
                 break;
         }
-
     }
-
-    // for test
-    // initialize Packet
-    // strcpy(p_write.string, "abc");
-    //p_write->string = (char *) malloc(MAX_SIZE*sizeof(char));
-    //p_read->string = (char *) malloc(MAX_SIZE*sizeof(char));
-    while(string_length < MAX_SIZE) {
-        c = getchar();
-        if(c == EOF) {
-            break;
-        }
-        p_write->string[string_length] = c;
-        string_length++;
-    }
-    p_write->length=htonl((size_t) (string_length+8));
     
     // 1. socket
     // creates socket with error handling.
@@ -153,7 +133,6 @@ int main(int argc, char* argv[])
         memset(p_read->string,0,sizeof(p_read->string));
         string_length = 0;
     }
-    
     
     // 5. close
     free(p_write);
