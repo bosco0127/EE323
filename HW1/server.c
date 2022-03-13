@@ -96,7 +96,9 @@ int main(int argc, char* argv[])
     // loop for data transmition.
     while(1){
         // 5. read & print
-        read_len = recv(client_socket, p_read, (size_t) MAX_SIZE, MSG_WAITALL); // recieve all the length
+        // read twice because...
+        read_len = recv(client_socket, p_read, (size_t) MAX_SIZE, MSG_PEEK); // PEEK for the size
+        read_len = recv(client_socket, p_read, (size_t) read_len, MSG_WAITALL); // recieve all the length
         if(read_len==-1) {
             fprintf(stderr,"recv() error\n");
             assert(0);
