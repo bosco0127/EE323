@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define MAX_SIZE 2500
+#define MAX_SIZE 1000000
 
 typedef struct packet {
     unsigned short op;
@@ -121,17 +121,22 @@ int main(int argc, char* argv[])
         }
         // write length into Network Byte order.
         p_write->length=htonl((size_t) (string_length+8));
+
         // 3. write
-        write_len = write(client_socket, p_write, (size_t) (string_length+8));
+        write_len = send(client_socket, p_write, (size_t) (string_length+8), 0);
         if(write_len==-1) {
             fprintf(stderr,"send() error\n");
             assert(0);
         }
 
-        // 4. read
-        read_len = read(client_socket, p_read, (size_t) (string_length+8));
+        // 4. read & print
+        read_len = recv(client_socket, p_read, (size_t) (string_length+8), MSG_WAITALL); // recieve all the length
         if(read_len==-1) {
             fprintf(stderr,"recv() error\n");
+            assert(0);
+        }
+        else if(read_len==0) {
+            fprintf(stderr,"server disconnected\n");
             assert(0);
         }
         // print result to stdout
