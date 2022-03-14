@@ -39,7 +39,9 @@ int main(int argc, char* argv[])
     // check if all options are involved.
     if(argc != 9) {
         fprintf(stderr,"need to contain -h <host> -p <port> -o <option> -s <shift> options\n");
-        assert(0);
+        free(p_write);
+        free(p_read);
+        exit(0);
     }
     // clean server_address
     memset(&server_address,0,sizeof(server_address));
@@ -61,11 +63,15 @@ int main(int argc, char* argv[])
                 break;
             case '?':
                 fprintf(stderr,"only -h -p -o -s is allowed for options\n");
-                assert(0);
+                free(p_write);
+                free(p_read);
+                exit(0);
                 break;
             default:
                 fprintf(stderr,"only -h -p -o -s is allowed for options\n");
-                assert(0);
+                free(p_write);
+                free(p_read);
+                exit(0);
                 break;
         }
     }
@@ -82,6 +88,7 @@ int main(int argc, char* argv[])
     // connect with error handling.
     if(connect(client_socket,(struct sockaddr*) &server_address, sizeof(server_address))==-1) {
         fprintf(stderr,"connect() error\n");
+        close(client_socket);
         assert(0);
     }
 
@@ -106,6 +113,7 @@ int main(int argc, char* argv[])
         write_len = send(client_socket, p_write, (size_t) (string_length+8), 0);
         if(write_len==-1) {
             fprintf(stderr,"send() error\n");
+            close(client_socket);
             assert(0);
         }
 
@@ -113,6 +121,7 @@ int main(int argc, char* argv[])
         read_len = recv(client_socket, p_read, (size_t) (string_length+8), MSG_WAITALL); // recieve all the length
         if(read_len==-1) {
             fprintf(stderr,"recv() error\n");
+            close(client_socket);
             assert(0);
         }
         else if(read_len==0) {

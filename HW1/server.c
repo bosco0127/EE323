@@ -34,6 +34,7 @@ int main(int argc, char* argv[])
     // packet length
     int write_len;
     int read_len;
+    int peak_len;
     // loop variable
     char c; // store stdin string
     int index = 0; // initilized as 0.
@@ -45,7 +46,9 @@ int main(int argc, char* argv[])
     // check if all options are involved.
     if(argc != 3) {
         fprintf(stderr,"need to contain -p <port> options\n");
-        assert(0);
+        free(p_write);
+        free(p_read);
+        exit(0);
     }
     // clean server_address
     memset(&server_address,0,sizeof(server_address));
@@ -59,11 +62,15 @@ int main(int argc, char* argv[])
                 break;
             case '?':
                 fprintf(stderr,"only -p is allowed for options\n");
-                assert(0);
+                free(p_write);
+                free(p_read);
+                exit(0);
                 break;
             default:
                 fprintf(stderr,"only -p is allowed for options\n");
-                assert(0);
+                free(p_write);
+                free(p_read);
+                exit(0);
                 break;
         }
     }
@@ -78,11 +85,13 @@ int main(int argc, char* argv[])
     // 2. bind
     if(bind(server_socket, (struct sockaddr*) &server_address, sizeof(server_address)) == -1) {
         fprintf(stderr,"bind() error\n");
+        close(server_socket);
         assert(0);
     }
     // 3. listen
     if(listen(server_socket, 10)==-1) {
         fprintf(stderr,"listen() error\n");
+        close(server_socket);
         assert(0);
     }
     // 4. accept
@@ -90,17 +99,64 @@ int main(int argc, char* argv[])
     client_socket = accept(server_socket, (struct sockaddr*) &client_address, &client_addr_size); //4번
     if(client_socket == -1) {
         fprintf(stderr,"accept() error\n");
+        close(server_socket);
         assert(0);
     }
 
     // loop for data transmition.
     while(1){
-        // 5. read & print
-        // read twice because...
-        read_len = recv(client_socket, p_read, (size_t) MAX_SIZE, MSG_PEEK); // PEEK for the size
-        read_len = recv(client_socket, p_read, (size_t) read_len, MSG_WAITALL); // recieve all the length
+        // 5. read & check protocol specification
+        // read op
+        read_len = recv(client_socket, &p_read->op, sizeof(p_read->op), MSG_WAITALL); // recieve all the length
+        if(read_len==-1) {
+            fprintf(stderr,"recv() error @ op\n");
+            close(server_socket);
+            close(client_socket);
+            assert(0);
+        }
+        // 5-1. op
+        op = p_read->op;
+        if ( op == 0 || op == 1) {
+            p_write->op = op;
+        }
+        else break;
+        // read shift
+        read_len = recv(client_socket, &p_read->shift, sizeof(p_read->shift), MSG_WAITALL); // recieve all the length
+        if(read_len==-1) {
+            fprintf(stderr,"recv() error @ shift\n");
+            close(server_socket);
+            close(client_socket);
+            assert(0);
+        }
+        // 5-2. shift
+        shift = p_read->shift;
+        if ( shift >= 0 && shift <= 65535 ) {
+            p_write->shift = shift;
+            shift = shift % ('z'-'a'+1);
+        }
+        else break;
+        // read length
+        read_len = recv(client_socket, &p_read->length, sizeof(p_read->length), MSG_WAITALL); // recieve all the length
+        if(read_len==-1) {
+            fprintf(stderr,"recv() error @ shift\n");
+            close(server_socket);
+            close(client_socket);
+            assert(0);
+        }
+        // 5-3. length
+        length = ntohl(p_read->length);
+        if ( length >= 0 && length <= MAX_SIZE ) {
+            p_write->length = p_read->length;
+        }
+        else break;
+        // break if string length is zero.
+        if (length <= 8) break;
+        // read string
+        read_len = recv(client_socket, p_read->string, (size_t) (length-8), MSG_WAITALL); // recieve all the length
         if(read_len==-1) {
             fprintf(stderr,"recv() error\n");
+            close(server_socket);
+            close(client_socket);
             assert(0);
         }
         else if(read_len==0) {
@@ -111,29 +167,9 @@ int main(int argc, char* argv[])
             fprintf(stderr,"no more than 10MB\n");
             break;
         }
-        // check specification
-        // 5-1. op
-        op = p_read->op;
-        if ( op == 0 || op == 1) {
-            p_write->op = op;
-        }
-        else break;
-        // 5-2. shift
-        shift = p_read->shift;
-        if ( shift >= 0 && shift <= 65535 ) {
-            p_write->shift = shift;
-            shift = shift % ('z'-'a'+1);
-        }
-        else break;
-        // 5-3. length
-        length = ntohl(p_read->length);
-        if ( length >= 0 && length <= MAX_SIZE ) {
-            p_write->length = p_read->length;
-        }
-        else break;
-        
+            
         // do Caesar cypher until index becomes length
-        while(index < length) {
+        while(index < read_len) {
             c = p_read->string[index];
             // break if EOF
             if(c == EOF) {
@@ -195,8 +231,8 @@ int main(int argc, char* argv[])
         }
 
         // reset p_write->string, p_read->string, string_length
-        memset(p_write->string,0,sizeof(p_write->string));
-        memset(p_read->string,0,sizeof(p_read->string));
+        memset(p_write,0,sizeof(p_write));
+        memset(p_read,0,sizeof(p_read));
         index = 0;
     }
 
