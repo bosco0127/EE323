@@ -27,6 +27,7 @@ int main(int argc, char* argv[])
     struct sockaddr_in client_address;
     socklen_t client_addr_size;
     // option variable
+    int optval = 1; // for setsocketopt()
     char opt;
     // Packet
     Packet *p_write = (Packet *) malloc(sizeof(Packet));
@@ -83,6 +84,12 @@ int main(int argc, char* argv[])
         assert(0);
     }
     // 2. bind
+    // allow socket to bind this port
+    if ( setsockopt(server_socket,SOL_SOCKET,SO_REUSEADDR,&optval,sizeof(optval)) == -1) {
+        fprintf(stderr,"setsocketopt() error\n");
+        close(server_socket);
+        assert(0);
+    }
     if(bind(server_socket, (struct sockaddr*) &server_address, sizeof(server_address)) == -1) {
         fprintf(stderr,"bind() error\n");
         close(server_socket);
