@@ -5,6 +5,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 #define MAX_SIZE 10000000
 
@@ -15,6 +18,16 @@ typedef struct packet {
     char string[MAX_SIZE];
     //char *string;
 } Packet;
+
+// This function is cited in "Beej's Guide to Network Program" //
+void sigchild_handler (int s) {
+    // waitpid() might overwrite errno, so we save and restore i
+    int saved_errno = errno;
+
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+
+    errno = saved_errno;
+}
 
 int main(int argc, char* argv[])
 {
@@ -42,11 +55,13 @@ int main(int argc, char* argv[])
     unsigned short op;
     unsigned short shift;
     int length;
+    // for signal handling
+    struct sigaction sa;
 
     // 0-1 Separate options
     // check if all options are involved.
     if(argc != 3) {
-        fprintf(stderr,"need to contain -p <port> options\n");
+        fprintf(stderr,"only need to contain -p <port> options\n");
         free(p_write);
         free(p_read);
         exit(0);
@@ -101,152 +116,170 @@ int main(int argc, char* argv[])
         close(server_socket);
         assert(0);
     }
-    // 4. accept
-    client_addr_size = sizeof(client_address);
-    client_socket = accept(server_socket, (struct sockaddr*) &client_address, &client_addr_size); //4번
-    if(client_socket == -1) {
-        fprintf(stderr,"accept() error\n");
-        close(server_socket);
-        assert(0);
+
+    // signal handling
+    // This part is cited in "Beej's Guide to Network Program" //
+    sa.sa_handler = sigchild_handler; // reap all dead processes
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &sa, NULL)== -1) {
+        perror("sigaction");
+        exit(1);
     }
 
-    // loop for data transmition.
-    while(1){
-        // 5. read & check protocol specification
-        // read op
-        read_len = recv(client_socket, &p_read->op, sizeof(p_read->op), MSG_WAITALL); // recieve all the length
-        if(read_len==-1) {
-            fprintf(stderr,"recv() error @ op\n");
+    while(1) {
+        // 4. accept
+        client_addr_size = sizeof(client_address);
+        client_socket = accept(server_socket, (struct sockaddr*) &client_address, &client_addr_size); //4번
+        if(client_socket == -1) {
+            fprintf(stderr,"accept() error\n");
             close(server_socket);
-            close(client_socket);
             assert(0);
         }
-        // 5-1. op
-        op = p_read->op;
-        if ( op == 0 || op == 1) {
-            p_write->op = op;
-        }
-        else break;
-        // read shift
-        read_len = recv(client_socket, &p_read->shift, sizeof(p_read->shift), MSG_WAITALL); // recieve all the length
-        if(read_len==-1) {
-            fprintf(stderr,"recv() error @ shift\n");
-            close(server_socket);
-            close(client_socket);
-            assert(0);
-        }
-        // 5-2. shift
-        shift = p_read->shift;
-        if ( shift >= 0 && shift <= 65535 ) {
-            p_write->shift = shift;
-            shift = shift % ('z'-'a'+1);
-        }
-        else break;
-        // read length
-        read_len = recv(client_socket, &p_read->length, sizeof(p_read->length), MSG_WAITALL); // recieve all the length
-        if(read_len==-1) {
-            fprintf(stderr,"recv() error @ shift\n");
-            close(server_socket);
-            close(client_socket);
-            assert(0);
-        }
-        // 5-3. length
-        length = ntohl(p_read->length);
-        if ( length >= 0 && length <= MAX_SIZE ) {
-            p_write->length = p_read->length;
-        }
-        else break;
-        // break if string length is zero.
-        if (length <= 8) break;
-        // read string
-        read_len = recv(client_socket, p_read->string, (size_t) (length-8), MSG_WAITALL); // recieve all the length
-        if(read_len==-1) {
-            fprintf(stderr,"recv() error\n");
-            close(server_socket);
-            close(client_socket);
-            assert(0);
-        }
-        else if(read_len==0) {
-            fprintf(stderr,"server disconnected\n");
-            break;
-        }
-        else if(read_len >= MAX_SIZE) {
-            fprintf(stderr,"no more than 10MB\n");
-            break;
-        }
-            
-        // do Caesar cypher until index becomes length
-        while(index < read_len) {
-            c = p_read->string[index];
-            // break if EOF
-            if(c == EOF) {
-                break;
+
+        if(!fork()){ // child process
+            close(server_socket); // child do not need this.
+            // loop for data transmition.
+            while(1){
+                // 5. read & check protocol specification
+                // read op
+                read_len = recv(client_socket, &p_read->op, sizeof(p_read->op), MSG_WAITALL); // recieve all the length
+                if(read_len==-1) {
+                    fprintf(stderr,"recv() error @ op\n");
+                    close(server_socket);
+                    close(client_socket);
+                    assert(0);
+                }
+                // 5-1. op
+                op = p_read->op;
+                if ( op == 0 || op == 1) {
+                    p_write->op = op;
+                }
+                else break;
+                // read shift
+                read_len = recv(client_socket, &p_read->shift, sizeof(p_read->shift), MSG_WAITALL); // recieve all the length
+                if(read_len==-1) {
+                    fprintf(stderr,"recv() error @ shift\n");
+                    close(server_socket);
+                    close(client_socket);
+                    assert(0);
+                }
+                // 5-2. shift
+                shift = p_read->shift;
+                if ( shift >= 0 && shift <= 65535 ) {
+                    p_write->shift = shift;
+                    shift = shift % ('z'-'a'+1);
+                }
+                else break;
+                // read length
+                read_len = recv(client_socket, &p_read->length, sizeof(p_read->length), MSG_WAITALL); // recieve all the length
+                if(read_len==-1) {
+                    fprintf(stderr,"recv() error @ shift\n");
+                    close(server_socket);
+                    close(client_socket);
+                    assert(0);
+                }
+                // 5-3. length
+                length = ntohl(p_read->length);
+                if ( length >= 0 && length <= MAX_SIZE ) {
+                    p_write->length = p_read->length;
+                }
+                else break;
+                // break if string length is zero.
+                if (length <= 8) break;
+                // read string
+                read_len = recv(client_socket, p_read->string, (size_t) (length-8), MSG_WAITALL); // recieve all the length
+                if(read_len==-1) {
+                    fprintf(stderr,"recv() error\n");
+                    close(server_socket);
+                    close(client_socket);
+                    assert(0);
+                }
+                else if(read_len==0) {
+                    fprintf(stderr,"server disconnected\n");
+                    break;
+                }
+                else if(read_len >= MAX_SIZE) {
+                    fprintf(stderr,"no more than 10MB\n");
+                    break;
+                }
+
+                // do Caesar cypher until index becomes length
+                while(index < read_len) {
+                    c = p_read->string[index];
+                    // break if EOF
+                    if(c == EOF) {
+                        break;
+                    }
+                    // in case of small letter.
+                    else if (c >= 'a' && c <= 'z') {
+                        // case of encode
+                        if (!op) {
+                            c = c + shift;
+                            if ( c > 'z') {
+                                c = c - 'z' + 'a' - 1;
+                            }
+                        }
+                        // case of decode
+                        else {
+                            c = c - shift;
+                            if ( c < 'a' ) {
+                                c = c - 'a' + 'z' + 1;
+                            }
+                        }
+                    }
+                    // in case of capital letter.
+                    else if (c >= 'A' && c <= 'Z') {
+                        // convert it to small letter first.
+                        c = c - 'A' + 'a';
+                        // case of encode
+                        if (!op) {
+                            c = c + shift;
+                            if ( c > 'z') {
+                                c = c - 'z' + 'a' - 1;
+                            }
+                        }
+                        // case of decode
+                        else {
+                            c = c - shift;
+                            if ( c < 'a' ) {
+                                c = c - 'a' + 'z' + 1;
+                            }
+                        }
+                    }
+
+                    // put it into string buffer.
+                    p_write->string[index] = c;
+                    // increase string length
+                    index++;
+                }
+
+                // 6. write
+                write_len = send(client_socket, p_write, (size_t) length, 0);
+                if(write_len==-1) {
+                    fprintf(stderr,"send() error\n");
+                    assert(0);
+                }
+
+                // break if EOF
+                if(c == EOF) {
+                    break;
+                }
+
+                // reset p_write->string, p_read->string, string_length
+                memset(p_write,0,sizeof(p_write));
+                memset(p_read,0,sizeof(p_read));
+                index = 0;
             }
-            // in case of small letter.
-            else if (c >= 'a' && c <= 'z') {
-                // case of encode
-                if (!op) {
-                    c = c + shift;
-                    if ( c > 'z') {
-                        c = c - 'z' + 'a' - 1;
-                    }
-                }
-                // case of decode
-                else {
-                    c = c - shift;
-                    if ( c < 'a' ) {
-                        c = c - 'a' + 'z' + 1;
-                    }
-                }
-            }
-            // in case of capital letter.
-            else if (c >= 'A' && c <= 'Z') {
-                // convert it to small letter first.
-                c = c - 'A' + 'a';
-                // case of encode
-                if (!op) {
-                    c = c + shift;
-                    if ( c > 'z') {
-                        c = c - 'z' + 'a' - 1;
-                    }
-                }
-                // case of decode
-                else {
-                    c = c - shift;
-                    if ( c < 'a' ) {
-                        c = c - 'a' + 'z' + 1;
-                    }
-                }
-            }
 
-            // put it into string buffer.
-            p_write->string[index] = c;
-            // increase string length
-            index++;
+            // 7. close
+            free(p_write);
+            free(p_read);
+            close(client_socket);
+            exit(0); // close child process
         }
-
-        // 6. write
-        write_len = send(client_socket, p_write, (size_t) length, 0);
-        if(write_len==-1) {
-            fprintf(stderr,"send() error\n");
-            assert(0);
-        }
-
-        // break if EOF
-        if(c == EOF) {
-            break;
-        }
-
-        // reset p_write->string, p_read->string, string_length
-        memset(p_write,0,sizeof(p_write));
-        memset(p_read,0,sizeof(p_read));
-        index = 0;
+        close(client_socket); // parent should also close this.
     }
-
-    // 7. close
-    free(p_write);
-    free(p_read);
-    close(server_socket);
-    close(client_socket);
+    
     return 0;
 } 

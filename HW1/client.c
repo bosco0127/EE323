@@ -56,11 +56,29 @@ int main(int argc, char* argv[])
                 server_address.sin_port=htons(atoi(optarg)); // Port no.
                 break;
             case 'o':
-                p_write->op = (short) atoi(optarg); // op type.
+                if ( atoi(optarg) == 0 || atoi(optarg) == 1 ) {
+                    p_write->op = (short) atoi(optarg); // op type.
+                    break;
+                }
+                else {
+                    fprintf(stderr,"only 0 or 1 is allowed for -o options\n");
+                    free(p_write);
+                    free(p_read);
+                    exit(0);
                 break;
+                }
             case 's':
-                p_write->shift = (short) atoi(optarg); // shift number.
+                if ( atoi(optarg) >= 0 && atoi(optarg) <= 65535 ) {
+                    p_write->shift = (short) atoi(optarg); // shift number.
+                    break;
+                }
+                else {
+                    fprintf(stderr,"only 0 ~ 65535 is allowed for -s options\n");
+                    free(p_write);
+                    free(p_read);
+                    exit(0);
                 break;
+                }
             case '?':
                 fprintf(stderr,"only -h -p -o -s is allowed for options\n");
                 free(p_write);
