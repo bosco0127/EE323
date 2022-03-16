@@ -42,9 +42,6 @@ int main(int argc, char* argv[])
     // option variable
     int optval = 1; // for setsocketopt()
     char opt;
-    // Packet
-    Packet *p_write = (Packet *) malloc(sizeof(Packet));
-    Packet *p_read = (Packet *) malloc(sizeof(Packet));
     // packet length
     int write_len;
     int read_len;
@@ -62,8 +59,6 @@ int main(int argc, char* argv[])
     // check if all options are involved.
     if(argc != 3) {
         fprintf(stderr,"only need to contain -p <port> options\n");
-        free(p_write);
-        free(p_read);
         exit(0);
     }
     // clean server_address
@@ -78,14 +73,10 @@ int main(int argc, char* argv[])
                 break;
             case '?':
                 fprintf(stderr,"only -p is allowed for options\n");
-                free(p_write);
-                free(p_read);
                 exit(0);
                 break;
             default:
                 fprintf(stderr,"only -p is allowed for options\n");
-                free(p_write);
-                free(p_read);
                 exit(0);
                 break;
         }
@@ -139,6 +130,11 @@ int main(int argc, char* argv[])
 
         if(!fork()){ // child process
             close(server_socket); // child do not need this.
+            
+            // allocate memory to Packet
+            Packet *p_write = (Packet *) malloc(sizeof(Packet));
+            Packet *p_read = (Packet *) malloc(sizeof(Packet));
+
             // loop for data transmition.
             while(1){
                 // 5. read & check protocol specification
@@ -146,7 +142,6 @@ int main(int argc, char* argv[])
                 read_len = recv(client_socket, &p_read->op, sizeof(p_read->op), MSG_WAITALL); // recieve all the length
                 if(read_len==-1) {
                     fprintf(stderr,"recv() error @ op\n");
-                    close(server_socket);
                     close(client_socket);
                     assert(0);
                 }
@@ -160,7 +155,6 @@ int main(int argc, char* argv[])
                 read_len = recv(client_socket, &p_read->shift, sizeof(p_read->shift), MSG_WAITALL); // recieve all the length
                 if(read_len==-1) {
                     fprintf(stderr,"recv() error @ shift\n");
-                    close(server_socket);
                     close(client_socket);
                     assert(0);
                 }
@@ -175,7 +169,6 @@ int main(int argc, char* argv[])
                 read_len = recv(client_socket, &p_read->length, sizeof(p_read->length), MSG_WAITALL); // recieve all the length
                 if(read_len==-1) {
                     fprintf(stderr,"recv() error @ shift\n");
-                    close(server_socket);
                     close(client_socket);
                     assert(0);
                 }
@@ -191,7 +184,6 @@ int main(int argc, char* argv[])
                 read_len = recv(client_socket, p_read->string, (size_t) (length-8), MSG_WAITALL); // recieve all the length
                 if(read_len==-1) {
                     fprintf(stderr,"recv() error\n");
-                    close(server_socket);
                     close(client_socket);
                     assert(0);
                 }
