@@ -19,7 +19,27 @@ typedef struct packet {
     //char *string;
 } Packet;
 
+// Wrapper for send()
+// Send repeatedly until send all the data
+int send_all(int s, void *buf, int len) {
+    int b_total = 0; // byte we've sent
+    int b_left = len; // byte to sent
+    int n;
+
+    while (b_total < len) {
+        n = send(s, buf+b_total, (size_t) b_left, 0);
+        if (n == -1) {
+            break;
+        }
+        b_total += n;
+        b_left -= n;
+    }
+
+    return (n == -1) ? -1 : b_total;
+}
+
 // This function is cited in "Beej's Guide to Network Program" //
+// Handles the zombie process.
 void sigchild_handler (int s) {
     // waitpid() might overwrite errno, so we save and restore i
     int saved_errno = errno;
@@ -247,7 +267,7 @@ int main(int argc, char* argv[])
                 }
 
                 // 6. write
-                write_len = send(client_socket, p_write, (size_t) length, 0);
+                write_len = send_all(client_socket, p_write, length);
                 if(write_len==-1) {
                     fprintf(stderr,"send() error\n");
                     assert(0);

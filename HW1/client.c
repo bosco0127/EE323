@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define MAX_SIZE 1000000
+#define MAX_SIZE 1000000//50000
 
 typedef struct packet {
     unsigned short op;
@@ -15,6 +15,48 @@ typedef struct packet {
     char string[MAX_SIZE];
     //char *string;
 } Packet;
+
+// Wrapper for send()
+// Send repeatedly until send all the data
+int send_all(int s, void *buf, int len) {
+    int b_total = 0; // byte we've sent
+    int b_left = len; // byte to sent
+    int n;
+
+    while (b_total < len) {
+        n = send(s, buf+b_total, (size_t) b_left, 0);
+        if (n == -1) {
+            break;
+        }
+        b_total += n;
+        b_left -= n;
+    }
+
+    return (n == -1) ? -1 : b_total;
+}
+
+// Wrapper for recv()
+// Receive repeatedly until receive all the data
+/*int recv_all(int s, void *buf, int len) {
+    int b_total = 0; // byte we've sent
+    int b_left = len; // byte to sent
+    int n;
+
+    while (b_total < len) {
+        n = recv(s, buf+b_total, (size_t) b_left, 0);
+        if (n == -1) {
+            break;
+        }
+        else if (n == 0) {
+            break;
+        }
+        b_total += n;
+        b_left -= n;
+    }
+
+    return (n == -1) ? -1 : 
+           (n == 0) ? 0 : b_total;
+}*/
 
 int main(int argc, char* argv[])
 {
@@ -27,8 +69,8 @@ int main(int argc, char* argv[])
     Packet *p_write = (Packet *) malloc(sizeof(Packet));
     Packet *p_read = (Packet *) malloc(sizeof(Packet));
     // packet length
-    int write_len;
-    int read_len;
+    int write_len = 0;
+    int read_len = 0;
     // option variable
     char opt;
     // loop variable
@@ -128,7 +170,8 @@ int main(int argc, char* argv[])
         p_write->length=htonl((size_t) (string_length+8));
 
         // 3. write
-        write_len = send(client_socket, p_write, (size_t) (string_length+8), 0);
+        //write_len = send(client_socket, p_write, (size_t) (string_length+8), 0);
+        write_len = send_all(client_socket, p_write, (string_length+8));
         if(write_len==-1) {
             fprintf(stderr,"send() error\n");
             close(client_socket);
@@ -137,6 +180,7 @@ int main(int argc, char* argv[])
 
         // 4. read & print
         read_len = recv(client_socket, p_read, (size_t) (string_length+8), MSG_WAITALL); // recieve all the length
+        //read_len = recv_all(client_socket, p_read, (string_length+8));
         if(read_len==-1) {
             fprintf(stderr,"recv() error\n");
             close(client_socket);
