@@ -62,8 +62,10 @@ int main(int argc, char* argv[])
     // server socket address
     struct sockaddr_in server_address;
     // Packet
+    Buffer *p_read = (Buffer *) malloc(sizeof(Buffer));
     Buffer *p_write = (Buffer *) malloc(sizeof(Buffer));
     // packet length
+    int read_len = 0;
     int write_len = 0;
     // option variable
     char opt;
@@ -153,6 +155,21 @@ int main(int argc, char* argv[])
         string_length = 0;
         */
     }
+
+    // 4. read & print
+    read_len = recv(client_socket, p_read->string, (size_t) MAX_SIZE, 0); // recieve all the length
+    //read_len = recv_all(client_socket, p_read, (string_length+8));
+    if(read_len==-1) {
+        fprintf(stderr,"recv() error\n");
+        close(client_socket);
+        assert(0);
+    }
+    else if(read_len==0) {
+        fprintf(stderr,"server disconnected\n");
+    }
+    // print result to stdout
+    for(int i = 0; i < read_len; i++)
+        fprintf(stdout,"%c", p_read->string[i]);
     
     // 5. close
     free(p_write);

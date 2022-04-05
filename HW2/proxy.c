@@ -65,7 +65,7 @@ int recv_request(int s, char *buf) {
         else if (n == 0) {
 			break;
 		}
-		if (strstr(buf,"\n\n") != NULL) // change \n -> \r\n
+		if (strstr(buf,"\r\n\r\n") != NULL) // change \n -> \r\n
 		{
 			isCRLF = 1;
 		}
@@ -88,17 +88,52 @@ void sigchild_handler (int s) {
     errno = saved_errno;
 }
 
-int RequestValid(char * buf, char **SL_token){
+// Extract Port Number from URL
+// Return Port number unless URL is inValid.
+// Invalid: return 0
+int ExtractPortNum(char *buf) {
+    int port = 0;
+    // if buf+i is digit
+    // => port = 10*port + *(buf+i)-'0'
+    // else if '/' return port
+    // else return 0
+    for(int i=0; i<strlen(buf)+1 ; i++) {
+        if(buf[i] >= '0' && buf[i] <= '9') {
+            port = 10*port + (buf[i]-'0');
+            /* debug */
+            //printf("%d\n",port);
+            /* debug */
+            if(port > 65536) {
+                port = 0;
+                break;
+            }
+        }
+        else if(buf[i] == '/') {
+            //printf("reach valid\n");
+            break;
+        }
+        else {
+            port = 0;
+            //printf("reach invalid\n");
+            break;
+        }
+    }
+
+    // return port number
+    return port;
+}
+
+int ParseRequest(char * buf, char **SL_token){
     char *CRLF[10];
     int CRLF_count = 0;
     int SL_count = 0;
     char *token, *save_ptr;
 
     // devide buf by CRLF
-    token = strtok(buf, "\n");
+    token = strtok(buf, "\r\n");
     CRLF[CRLF_count] = token;
     for (CRLF_count = 1 ; CRLF_count < 10; CRLF_count++ ) { // change \n -> \r\n
-        token = strtok(NULL, "\n");
+        token = strtok(NULL, "\r\n");
         if ( token == NULL) {
             break;
         }
@@ -130,6 +165,112 @@ int RequestValid(char * buf, char **SL_token){
     return SL_count;
 }
 
+// Check Request Validation
+// Valid: return port number(default 80 if not specified)
+// Invaid: return 0
+int RequestValid(char **SL_token, int SL_count) {
+    char *http_form;
+    char *path;
+    int port;
+    // The numbe of the token must be 5
+    if(SL_count != 5) {
+        return 0;
+    }
+    // HTTP methods must be GET
+    if(strcmp(SL_token[0],"GET") != 0) {
+        return 0;
+    }
+    // URL & Host header check.
+    if(strstr(SL_token[1],SL_token[4]) == NULL) {
+        return 0;
+    }
+    // HTTP version must be 1.0
+    if(strcmp(SL_token[2],"HTTP/1.0") != 0) {
+        return 0;
+    }
+    // Host header format validtation check.
+    if(strcmp(SL_token[3],"Host:") != 0) {
+        return 0;
+    }
+    // Check URL form starts with "http://"
+    http_form = strtok(SL_token[1], SL_token[4]);
+    if(http_form == NULL || strcmp(http_form,"http://") != 0) {
+        return 0;
+    }
+    /* debug */
+    //printf("/******************http form test*****************/\n");
+    //printf("%s\n",http_form);
+    /* debug */
+    http_form = SL_token[1] + 7 + strlen(SL_token[4]);
+    /* debug */
+    //printf("/******************http form test*****************/\n");
+    //printf("%s\n",http_form);
+    /* debug */
+    // Extract port if exist.
+    if (http_form[0] == ':') {
+        port = ExtractPortNum(&http_form[1]);
+        return port;
+    }
+    // => below is path. return 1
+    else if (http_form[0] == '/') {
+        return 80;
+    }
+    else {
+        // invalid if no path
+        return 0;
+    }
+    /* debug */
+    //printf("/******************RequestValid test*****************/\n");
+    //printf("SHOULD NOT REACH HERE\n");
+    /* debug */
+    // should not reach here
+    return 0;
+}
+
+/**This function is cited in "Beej's Guide to Network Program"**/
+// Connect to the web server
+// return server socket
+int ConnectHost(char *host, int port){
+    int sockfd;
+    struct addrinfo hints, *servinfo, *p;
+    int rv;
+    char PORT[6];
+    sprintf(PORT,"%d",port);
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ((rv = getaddrinfo(host, PORT, &hints, &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return 1;
+    }
+
+    // loop through all the results and connect to the first we can
+    for(p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype,
+                p->ai_protocol)) == -1) {
+            perror("proxy: socket");
+            continue;
+        }
+
+        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            perror("proxy: connect");
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL) {
+        fprintf(stderr, "proxy: failed to connect\n");
+        return -1;
+    }
+
+    return sockfd;
+}
+
 int main(int argc, char* argv[])
 {
     // 0. Declare variables
@@ -153,6 +294,8 @@ int main(int argc, char* argv[])
     int length;
     // for signal handling
     struct sigaction sa;
+    // Bad Request Message
+    char bad_request[30] = "HTTP/1.0 400 Bad Request\r\n\r\n";
 
     // 0-1 Get port number from the command line.
     // check if all options are involved.
@@ -229,21 +372,71 @@ int main(int argc, char* argv[])
             // SL_token
             char *SL_token[10];
             int SL_count = 0;
+            // port number
+            int port = 0;
+            // web socket
+            int web_socket;
 
 			// receive the request message.
 			read_len = recv_request(client_socket, read_buf->string);
             /* debug */
-			printf("%s\n",read_buf->string);
-			printf("read_len is %d\n",read_len);
+            //printf("/******************Receive test*****************/\n");
+			//printf("%s\n",read_buf->string);
+			//printf("read_len is %d\n",read_len);
             /* debug */
 
-			// Request Validation Check
-            SL_count = RequestValid(read_buf->string, SL_token);
+            // Parse the Request Message First
+            SL_count = ParseRequest(read_buf->string, SL_token);
             /* debug */
-            for(int i = 0; i < SL_count; i++){
-                printf("SL_token[%d]: %s\n",i,SL_token[i]);
+            //printf("/******************Parse test*****************/\n");
+            //for(int i = 0; i < SL_count; i++){
+            //    printf("SL_token[%d]: %s\n",i,SL_token[i]);
+            //}
+            //printf("SL_count: %d\n",SL_count);
+            /* debug */
+
+            // Request Validation Check
+            if(!(port = RequestValid(SL_token, SL_count))){
+                // send 400 message
+                send(client_socket, bad_request, (size_t) strlen(bad_request), 0);
+                // 7. close
+                close(client_socket);
+                exit(0); // close child process
             }
-            /* debug */
+
+            // connect to the host with port.
+            web_socket = ConnectHost(SL_token[4], port);
+            if (web_socket == -1) {
+                fprintf(stderr,"proxy: web connection failed!\n");
+                assert(0);
+            }
+
+            // send request of client message to the web server.
+            write_len = send_all(web_socket, read_buf->string, strlen(read_buf->string));
+            if(write_len==-1) {
+                fprintf(stderr,"send() error\n");
+                close(web_socket);
+                assert(0);
+            }
+
+            // receive message from the web server.
+            read_len = recv(web_socket, write_buf->string, (size_t) MAX_SIZE, 0);
+            if(read_len==-1) {
+                fprintf(stderr,"recv() error\n");
+                close(web_socket);
+                assert(0);
+            }
+
+            // close web socket
+            close(web_socket);
+
+            // send web messages to client host.
+            write_len = send_all(client_socket, write_buf->string, read_len);
+            if(write_len==-1) {
+                fprintf(stderr,"send() error\n");
+                close(client_socket);
+                assert(0);
+            }
 
             // 7. close
             close(client_socket);
