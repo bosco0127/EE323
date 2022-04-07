@@ -77,6 +77,27 @@ int recv_request(int s, char *buf) {
 		   (n == 0) ? 0 : b_length;
 }
 
+// Wrapper for recv()
+// Receive form web.
+int recv_web(int s, char *buf) {
+    int b_length = 0; // buffer length
+	int n = 0;
+
+    while (b_length < MAX_SIZE) {
+        n = recv(s, buf+b_length, (size_t) MAX_SIZE, 0);
+        if (n == -1) {
+            break;
+        }
+        else if (n == 0) {
+			break;
+		}
+		b_length += n;
+    }
+	buf[b_length] = '\0';
+
+    return (n == -1) ? -1 : b_length;
+}
+
 // This function is cited in "Beej's Guide to Network Program" //
 // Handles the zombie process.
 void sigchild_handler (int s) {
@@ -123,10 +144,8 @@ int ExtractPortNum(char *buf) {
     return port;
 }
 
-int ParseRequest(char * buf, char **SL_token){
-    char *CRLF[10];
+void ParseHeader(char * buf, char **CRLF){
     int CRLF_count = 0;
-    int SL_count = 0;
     char *token, *save_ptr;
 
     // devide buf by CRLF
@@ -140,6 +159,25 @@ int ParseRequest(char * buf, char **SL_token){
         CRLF[CRLF_count] = token;
     }
     CRLF[CRLF_count] = NULL;
+    return;
+}
+
+int ParseRequest(char **SL_token, char **CRLF){
+    //int CRLF_count = 0;
+    int SL_count = 0;
+    char *token, *save_ptr;
+
+    // devide buf by CRLF
+    /*token = strtok(buf, "\r\n");
+    CRLF[CRLF_count] = token;
+    for (CRLF_count = 1 ; CRLF_count < 10; CRLF_count++ ) { // change \n -> \r\n
+        token = strtok(NULL, "\r\n");
+        if ( token == NULL) {
+            break;
+        }
+        CRLF[CRLF_count] = token;
+    }
+    CRLF[CRLF_count] = NULL;*/
 
     // devide CRLF by space character
     token = strtok(CRLF[0]," ");
@@ -170,7 +208,8 @@ int ParseRequest(char * buf, char **SL_token){
 // Invaid: return 0
 int RequestValid(char **SL_token, int SL_count) {
     char *http_form;
-    char *path;
+    char *host_ptr;
+    char *path_ptr;
     int port;
     // The numbe of the token must be 5
     if(SL_count != 5) {
@@ -181,7 +220,7 @@ int RequestValid(char **SL_token, int SL_count) {
         return 0;
     }
     // URL & Host header check.
-    if(strstr(SL_token[1],SL_token[4]) == NULL) {
+    if((host_ptr = strstr(SL_token[1],SL_token[4])) == NULL) {
         return 0;
     }
     // HTTP version must be 1.0
@@ -192,15 +231,31 @@ int RequestValid(char **SL_token, int SL_count) {
     if(strcmp(SL_token[3],"Host:") != 0) {
         return 0;
     }
+    /* debug */
+    //printf("%s\n",SL_token[1]);
+    //printf("%s\n",host_ptr);
+    /* debug */
     // Check URL form starts with "http://"
-    http_form = strtok(SL_token[1], SL_token[4]);
-    if(http_form == NULL || strcmp(http_form,"http://") != 0) {
+    if ((host_ptr - SL_token[1]) != 7) {
         return 0;
     }
+    if ( strncmp(SL_token[1],"http://",7) != 0) {
+        return 0;
+    }
+    // check Host valid
+    //path_ptr = strstr(host_ptr,"/");
+    //if ( (path_ptr != NULL) && (strlen(SL_token[4]) != (host_ptr-path_ptr)) ){
+    //    return 0;
+    //}
+    //http_form = strtok(SL_token[1], SL_token[4]);
     /* debug */
     //printf("/******************http form test*****************/\n");
     //printf("%s\n",http_form);
+    //printf("%s\n",SL_token[1]);
     /* debug */
+    /*if(http_form == NULL || strcmp(http_form,"http://") != 0) {
+        return 0;
+    }*/
     http_form = SL_token[1] + 7 + strlen(SL_token[4]);
     /* debug */
     //printf("/******************http form test*****************/\n");
@@ -211,13 +266,10 @@ int RequestValid(char **SL_token, int SL_count) {
         port = ExtractPortNum(&http_form[1]);
         return port;
     }
-    // => below is path. return 1
-    else if (http_form[0] == '/') {
-        return 80;
-    }
+    // Else default port number
     else {
         // invalid if no path
-        return 0;
+        return 80;
     }
     /* debug */
     //printf("/******************RequestValid test*****************/\n");
@@ -243,7 +295,7 @@ int ConnectHost(char *host, int port){
 
     if ((rv = getaddrinfo(host, PORT, &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
+        return 0;
     }
 
     // loop through all the results and connect to the first we can
@@ -269,6 +321,29 @@ int ConnectHost(char *host, int port){
     }
 
     return sockfd;
+}
+
+// Make Request Message
+// return length of request message.
+int MakeRequestMsg(char *request_buf, char **header) {
+    int len_0 = strlen(header[0]);
+    int len_1 = strlen(header[1]);
+    int index = 0;
+
+    for(index = 0; index < len_0; index++){
+        request_buf[index] = header[0][index];
+    }
+    request_buf[index++] = '\r';
+    request_buf[index++] = '\n';
+    for(; index < len_0 + 2 + len_1; index++){
+        request_buf[index] = header[1][index-len_0-2];
+    }
+    request_buf[index++] = '\r';
+    request_buf[index++] = '\n';
+    request_buf[index++] = '\r';
+    request_buf[index++] = '\n';
+
+    return index;
 }
 
 int main(int argc, char* argv[])
@@ -369,7 +444,11 @@ int main(int argc, char* argv[])
 			// Allocate memory to the buffer.
 			Buffer *read_buf = (Buffer *) malloc(sizeof(Buffer));
 			Buffer *write_buf = (Buffer *) malloc(sizeof(Buffer));
+            char request_buf[100];
+            int request_len = 0;
             // SL_token
+            char *CRLF[10];
+            char *header[2];
             char *SL_token[10];
             int SL_count = 0;
             // port number
@@ -386,7 +465,21 @@ int main(int argc, char* argv[])
             /* debug */
 
             // Parse the Request Message First
-            SL_count = ParseRequest(read_buf->string, SL_token);
+            ParseHeader(read_buf->string, CRLF);
+            if ( CRLF[1] == NULL ) {
+                // send 400 message
+                send(client_socket, bad_request, (size_t) strlen(bad_request), 0);
+                // 7. close
+                close(client_socket);
+                free(read_buf);
+                free(write_buf);
+                exit(0); // close child process
+            }
+            header[0] = (char *) malloc((strlen(CRLF[0])+1)*sizeof(char));
+            header[1] = (char *) malloc((strlen(CRLF[1])+1)*sizeof(char));
+            strcpy(header[0],CRLF[0]);
+            strcpy(header[1],CRLF[1]);
+            SL_count = ParseRequest(SL_token, CRLF);
             /* debug */
             //printf("/******************Parse test*****************/\n");
             //for(int i = 0; i < SL_count; i++){
@@ -401,8 +494,26 @@ int main(int argc, char* argv[])
                 send(client_socket, bad_request, (size_t) strlen(bad_request), 0);
                 // 7. close
                 close(client_socket);
+                free(read_buf);
+                free(write_buf);
+                free(header[0]);
+                free(header[1]);
                 exit(0); // close child process
             }
+            /* debug */
+            //printf("%s\n",SL_token[4]);
+            //printf("%d\n",port);
+            /* debug */
+
+            // Make Request Message
+            request_len = MakeRequestMsg(request_buf, header);
+            /* debug */
+            //printf("%s\n",header[0]);
+            //printf("%s\n",header[1]);
+            //printf("The length should be: %ld\n", strlen(header[0])+2+strlen(header[1])+4);
+            //printf("%d\n",request_len);
+            //printf("%s\n",request_buf);
+            /* debug */
 
             // connect to the host with port.
             web_socket = ConnectHost(SL_token[4], port);
@@ -410,9 +521,21 @@ int main(int argc, char* argv[])
                 fprintf(stderr,"proxy: web connection failed!\n");
                 assert(0);
             }
+            // Invalid Host.
+            if (web_socket == 0) {
+                // send 400 message
+                send(client_socket, bad_request, (size_t) strlen(bad_request), 0);
+                // 7. close
+                close(client_socket);
+                free(read_buf);
+                free(write_buf);
+                free(header[0]);
+                free(header[1]);
+                exit(0); // close child process
+            }
 
             // send request of client message to the web server.
-            write_len = send_all(web_socket, read_buf->string, strlen(read_buf->string));
+            write_len = send_all(web_socket, request_buf, request_len);
             if(write_len==-1) {
                 fprintf(stderr,"send() error\n");
                 close(web_socket);
@@ -420,7 +543,8 @@ int main(int argc, char* argv[])
             }
 
             // receive message from the web server.
-            read_len = recv(web_socket, write_buf->string, (size_t) MAX_SIZE, 0);
+            //read_len = recv(web_socket, write_buf->string, (size_t) MAX_SIZE, 0);
+            read_len = recv_web(web_socket, write_buf->string);
             if(read_len==-1) {
                 fprintf(stderr,"recv() error\n");
                 close(web_socket);
@@ -440,6 +564,10 @@ int main(int argc, char* argv[])
 
             // 7. close
             close(client_socket);
+            free(read_buf);
+            free(write_buf);
+            free(header[0]);
+            free(header[1]);
             exit(0); // close child process
         }
         close(client_socket); // parent should also close this.
