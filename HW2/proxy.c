@@ -371,12 +371,35 @@ int main(int argc, char* argv[])
     struct sigaction sa;
     // Bad Request Message
     char bad_request[30] = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    // black list
+    char *black_list;
+    int black_len=0;
+    int isblack = 0;
 
     // 0-1 Get port number from the command line.
     // check if all options are involved.
     if(argc != 2) {
         fprintf(stderr,"type \"./proxy <port>\"\n");
         exit(0);
+    }
+
+    // Check if there's redirection: isatty(int fd) func, fd == 0 => stdin
+    // return 0 if redirection.
+    if(!isatty(0)) {
+        isblack = 1;
+        black_list = (char *) malloc(MAX_SIZE*sizeof(char));
+        memset(black_list,0,MAX_SIZE*sizeof(char));
+        while(black_len < MAX_SIZE) {
+            c = fgetc(stdin);
+            // break if EOF
+            if(c == EOF) {
+                break;
+            }
+            // put it into string buffer.
+            black_list[black_len] = c;
+            // increase string length
+            black_len++;
+        }
     }
 
     // clean server_address
@@ -446,6 +469,8 @@ int main(int argc, char* argv[])
 			Buffer *write_buf = (Buffer *) malloc(sizeof(Buffer));
             char request_buf[100];
             int request_len = 0;
+            char warning_buf[] = "GET http://warning.or.kr HTTP/1.0\r\nHost: warning.or.kr\r\n\r\n";
+            char warning_len = strlen(warning_buf);
             // SL_token
             char *CRLF[10];
             char *header[2];
@@ -505,16 +530,6 @@ int main(int argc, char* argv[])
             //printf("%d\n",port);
             /* debug */
 
-            // Make Request Message
-            request_len = MakeRequestMsg(request_buf, header);
-            /* debug */
-            //printf("%s\n",header[0]);
-            //printf("%s\n",header[1]);
-            //printf("The length should be: %ld\n", strlen(header[0])+2+strlen(header[1])+4);
-            //printf("%d\n",request_len);
-            //printf("%s\n",request_buf);
-            /* debug */
-
             // connect to the host with port.
             web_socket = ConnectHost(SL_token[4], port);
             if (web_socket == -1) {
@@ -531,7 +546,34 @@ int main(int argc, char* argv[])
                 free(write_buf);
                 free(header[0]);
                 free(header[1]);
+                if(isblack) {
+                    free(black_list);
+                }
                 exit(0); // close child process
+            }
+
+            // Check if the host is in the black list.
+            if(isblack && strstr(black_list,SL_token[4]) != NULL) {
+                // set new web socket
+                web_socket = ConnectHost("warning.or.kr", 80);
+                strcpy(request_buf,warning_buf);
+                request_len = warning_len;
+                /* debug */
+                //printf("blakclist!\n");
+                //printf("%d\n",request_len);
+                //printf("%s\n",request_buf);
+                /* debug */
+            }
+            else {
+                // Make Request Message
+                request_len = MakeRequestMsg(request_buf, header);
+                /* debug */
+                //printf("%s\n",header[0]);
+                //printf("%s\n",header[1]);
+                //printf("The length should be: %ld\n", strlen(header[0])+2+strlen(header[1])+4);
+                //printf("%d\n",request_len);
+                //printf("%s\n",request_buf);
+                /* debug */
             }
 
             // send request of client message to the web server.
@@ -568,6 +610,9 @@ int main(int argc, char* argv[])
             free(write_buf);
             free(header[0]);
             free(header[1]);
+            if(isblack) {
+                free(black_list);
+            }
             exit(0); // close child process
         }
         close(client_socket); // parent should also close this.
