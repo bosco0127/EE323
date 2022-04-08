@@ -118,7 +118,7 @@ int ExtractPortNum(char *buf) {
     // => port = 10*port + *(buf+i)-'0'
     // else if '/' return port
     // else return 0
-    for(int i=0; i<strlen(buf)+1 ; i++) {
+    for(int i=0; i<strlen(buf) ; i++) {
         if(buf[i] >= '0' && buf[i] <= '9') {
             port = 10*port + (buf[i]-'0');
             /* debug */
