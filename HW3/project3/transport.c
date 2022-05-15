@@ -227,7 +227,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
                     if(success == false) {
                         fprintf(stderr, "In control_loop: Waiting an ACK error\n");
                         free(buffer);
-                        free(ctx);
                         return;
                     }
                     //printf("remain_window = %d\n", ctx->remainder_window);
@@ -240,7 +239,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(data_len == 0) {
                 fprintf(stderr, "In control_loop: No Data from stcp_app_recv()\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
 
@@ -249,7 +247,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(success == false) {
                 fprintf(stderr, "In control_loop: Sending App Data error\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
 
@@ -263,7 +260,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(success == false) {
                 fprintf(stderr, "In control_loop: Waiting an ACK error\n");
                 free(buffer);
-                free(ctx);
                 return;
             }*/
         }
@@ -273,7 +269,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(data_len < sizeof(STCPHeader)) {
                 fprintf(stderr, "In control_loop: Invalid Data from stcp_network_recv()\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
             STCPHeader *tcp_header = (STCPHeader *)buffer;
@@ -287,7 +282,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
                 if(success == false) {
                     fprintf(stderr, "4-way handshake: sending an ACK error\n");
                     free(buffer);
-                    free(ctx);
                     return;
                 }
                 stcp_fin_received(sd);
@@ -298,14 +292,12 @@ static void control_loop(mysocket_t sd, context_t *ctx)
                 if(success == false) {
                     fprintf(stderr, "4-way handshake: sending an FINACK error\n");
                     free(buffer);
-                    free(ctx);
                     return;
                 }
                 success = WaitSegment(sd, ctx, ACK);
                 if(success == false) {
                     fprintf(stderr, "4-way handshake: waiting an ACK error\n");
                     free(buffer);
-                    free(ctx);
                     return;
                 }
 
@@ -339,7 +331,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
                 if(success == false) {
                     fprintf(stderr, "In control_loop: sending an ACK error\n");
                     free(buffer);
-                    free(ctx);
                     return;
                 }
             }
@@ -351,7 +342,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(success == false) {
                 fprintf(stderr, "4-way handshake: sending a FINACK error\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
 
@@ -361,7 +351,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(success == false) {
                 fprintf(stderr, "4-way handshake: waiting an ACK error\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
 
@@ -371,14 +360,12 @@ static void control_loop(mysocket_t sd, context_t *ctx)
             if(success == false) {
                 fprintf(stderr, "4-way handshake: waiting a FINACK error\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
             success = SendSegment(sd, ctx, ACK, NULL, 0);
             if(success == false) {
                 fprintf(stderr, "4-way handshake: sending an ACK error\n");
                 free(buffer);
-                free(ctx);
                 return;
             }
 
