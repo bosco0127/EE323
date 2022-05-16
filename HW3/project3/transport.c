@@ -199,6 +199,13 @@ static void control_loop(mysocket_t sd, context_t *ctx)
     size_t data_len = 0;
     bool success = true;
 
+    // Allocate memory to the buffer
+    buffer = (char *) malloc(STCP_MSS + sizeof(STCPHeader));
+    if(buffer == NULL) {
+        fprintf(stderr, "In control_loop: malloc failed!\n");
+        assert(0);
+    }
+
     while (!ctx->done)
     {
         unsigned int event;
@@ -209,13 +216,6 @@ static void control_loop(mysocket_t sd, context_t *ctx)
 
         // max_len: smaller one between remainder_window and STCP_MSS
         max_len = (STCP_MSS < ctx->remainder_window) ? STCP_MSS : ctx->remainder_window;
-
-        // Allocate memory to the buffer
-        buffer = (char *) malloc(STCP_MSS + sizeof(STCPHeader));
-        if(buffer == NULL) {
-            fprintf(stderr, "In control_loop: malloc failed!\n");
-            assert(0);
-        }
 
         /* check whether it was the network, app, or a close request */
         if (event & APP_DATA)
