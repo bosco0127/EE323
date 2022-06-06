@@ -547,7 +547,7 @@ void sr_handlepacket(struct sr_instance *sr,
 				if (arpreq != NULL) {
 					for (en_pck = arpreq->packets; en_pck != NULL; en_pck = en_pck->next) {
 						
-						int exist_same = 0;
+						int matched = 0;
 						struct sr_ethernet_hdr *en_eth_hdr = (struct sr_ethernet_hdr *)(en_pck->buf);
 						struct sr_ip_hdr *en_ip_hdr = (struct sr_ip_hdr *)((uint8_t *)(en_pck->buf) + sizeof(struct sr_ethernet_hdr));
 						/* set dst MAC addr */
@@ -556,11 +556,11 @@ void sr_handlepacket(struct sr_instance *sr,
 						/* decrement TTL except for self-generated packets */
 						for (ifc = sr->if_list; ifc != NULL; ifc = ifc->next) {
 							if (en_ip_hdr->ip_src == ifc->ip) {
-								exist_same = 1;
+								matched = 1;
 								break;
 							}
 						}
-						if (exist_same == 0) {
+						if (matched == 0) {
 							en_ip_hdr->ip_ttl = en_ip_hdr->ip_ttl - 1;
 						}
 						/* modify checksum */
