@@ -166,8 +166,11 @@ void sr_handlepacket(struct sr_instance *sr,
 		/* check destination */
 		for (ifc = sr->if_list; ifc != NULL; ifc = ifc->next)
 		{
-			if (i_hdr0->ip_dst == ifc->ip)
+			if (i_hdr0->ip_dst == ifc->ip) {
+				fprintf(stderr, "i_hdr0->ip_dst:");
+				print_addr_ip_int(ntohl(i_hdr0->ip_dst));
 				break;
+			}
 		}
 
 		/* check ip black list */
@@ -205,20 +208,22 @@ void sr_handlepacket(struct sr_instance *sr,
 
 					/**************** fill in code here *****************/
 					e_hdr = (struct sr_ethernet_hdr *)new_pck; /* e_hdr set */
-					i_hdr = (struct sr_ip_hdr *)new_pck + sizeof(struct sr_ethernet_hdr); /* i_hdr set */
-					ict0_hdr = (struct sr_icmp_t0_hdr *)(((uint8_t *)i_hdr) + sizeof(struct sr_ip_hdr)); /* ict0_hdr set */
+					i_hdr = (struct sr_ip_hdr *)(new_pck + sizeof(struct sr_ethernet_hdr)); /* i_hdr set */
+					ict0_hdr = (struct sr_icmp_t0_hdr *)(new_pck + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr)); /* ict0_hdr set */
 					/* ICMP header*/
 					ict0_hdr->icmp_type = 0x00;
 					ict0_hdr->icmp_code = 0x00;
 					ict0_hdr->icmp_sum = 0;
 					ict0_hdr->icmp_identifier = ((struct sr_icmp_t0_hdr *)ic_hdr0)->icmp_identifier;
 					ict0_hdr->icmp_seq_num = ((struct sr_icmp_t0_hdr *)ic_hdr0)->icmp_seq_num;
-					memcpy(ict0_hdr->data, ((struct sr_icmp_t0_hdr *)ic_hdr0)->data, ICMP_DATA_SIZE);
+					fprintf(stderr, "ic_hdr0->icmp_seq_num: %d ict0_hdr->icmp_seq_num: %d\n",((struct sr_icmp_t0_hdr *)ic_hdr0)->icmp_seq_num, ict0_hdr->icmp_seq_num);
+					memcpy(ict0_hdr->data, ((struct sr_icmp_t0_hdr *)ic_hdr0)->data, ICMP_PAYLOAD_SIZE);
 					ict0_hdr->icmp_sum = cksum(ict0_hdr, new_len - sizeof(struct sr_ethernet_hdr) - sizeof(struct sr_ip_hdr));
 					/* IP header */
-					i_hdr->ip_hl = 0x5;
-					i_hdr->ip_v = 0x4;
+					i_hdr->ip_hl = i_hdr0->ip_hl;
+					i_hdr->ip_v = i_hdr0->ip_v;
 					i_hdr->ip_tos = i_hdr0->ip_tos;
+					fprintf(stderr, "i_hdr0->ip_tos: %d i_hdr->ip_tos:: %d\n",i_hdr0->ip_tos, i_hdr->ip_tos);
 					i_hdr->ip_len = i_hdr0->ip_len;
 					i_hdr->ip_id = i_hdr0->ip_id;
 					i_hdr->ip_off = i_hdr0->ip_off;
@@ -227,6 +232,8 @@ void sr_handlepacket(struct sr_instance *sr,
 					i_hdr->ip_sum = 0;
 					i_hdr->ip_src = i_hdr0->ip_dst;
 					i_hdr->ip_dst = i_hdr0->ip_src;
+					fprintf(stderr, "i_hdr->ip_src:");
+					print_addr_ip_int(i_hdr->ip_src);
 					i_hdr->ip_sum = cksum(i_hdr, sizeof(struct sr_ip_hdr));
 					/**************** fill in code here *****************/
 					/* refer routing table */
@@ -237,9 +244,12 @@ void sr_handlepacket(struct sr_instance *sr,
 						/**************** fill in code here *****************/
 						ifc = sr_get_interface(sr, rtentry->interface);
 						/* Ethernet header */
+						e_hdr->ether_type = htons(ethertype_ip);
 						memcpy(e_hdr->ether_shost, ifc->addr, ETHER_ADDR_LEN);
 						/**************** fill in code here *****************/
-						arpentry = sr_arpcache_lookup(&(sr->cache), rtentry->gw.s_addr);
+						arpentry = sr_arpcache_lookup(&(sr->cache), i_hdr->ip_dst/*rtentry->gw.s_addr*/);
+						fprintf(stderr, "i_hdr->ip_dst:");
+						print_addr_ip_int(i_hdr->ip_dst);
 						if (arpentry != NULL)
 						{
 							/**************** fill in code here *****************/
@@ -247,13 +257,17 @@ void sr_handlepacket(struct sr_instance *sr,
 							memcpy(e_hdr->ether_dhost, arpentry->mac, ETHER_ADDR_LEN);
 							free(arpentry);
 							/* send */
+							print_hdr_eth(new_pck);
+							print_hdr_ip(new_pck + sizeof(struct sr_ethernet_hdr));
+							print_hdr_icmp(new_pck + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr));
+							fprintf(stderr, "rtentry->interface: %s\n",rtentry->interface);
 							sr_send_packet(sr, new_pck, new_len, rtentry->interface);
 							/**************** fill in code here *****************/
 						}
 						else
 						{
 							/* queue */
-							arpreq = sr_arpcache_queuereq(&(sr->cache), rtentry->gw.s_addr, new_pck, new_len, rtentry->interface);
+							arpreq = sr_arpcache_queuereq(&(sr->cache), i_hdr->ip_dst/*rtentry->gw.s_addr*/, new_pck, new_len, rtentry->interface);
 							sr_arpcache_handle_arpreq(sr, arpreq);
 						}
 					}
@@ -307,7 +321,7 @@ void sr_handlepacket(struct sr_instance *sr,
 					/* Ethernet header */
 					e_hdr->ether_type = htons(ethertype_ip);
 					memcpy(e_hdr->ether_shost, ifc->addr, ETHER_ADDR_LEN);
-					arpentry = sr_arpcache_lookup(&(sr->cache), rtentry->gw.s_addr);
+					arpentry = sr_arpcache_lookup(&(sr->cache),i_hdr->ip_dst/*rtentry->gw.s_addr*/);
 					if (arpentry != NULL) {
 						memcpy(e_hdr->ether_dhost, arpentry->mac, ETHER_ADDR_LEN);
 						free(arpentry);
@@ -316,7 +330,7 @@ void sr_handlepacket(struct sr_instance *sr,
 					}
 					else {
 						/* queue */
-						arpreq = sr_arpcache_queuereq(&(sr->cache), rtentry->gw.s_addr, new_pck, new_len, rtentry->interface);
+						arpreq = sr_arpcache_queuereq(&(sr->cache),i_hdr->ip_dst/*rtentry->gw.s_addr*/, new_pck, new_len, rtentry->interface);
 						sr_arpcache_handle_arpreq(sr, arpreq);
 					}
 				/* done */
@@ -332,12 +346,14 @@ void sr_handlepacket(struct sr_instance *sr,
 		/* destined elsewhere, forward */
 		else
 		{
+			fprintf(stderr, "ifc == NULL\n");
 			/* refer routing table */
 			rtentry = sr_findLPMentry(sr->routing_table, i_hdr0->ip_dst);
 
 			/* routing table hit */
 			if (rtentry != NULL)
 			{
+				fprintf(stderr, "routing table hit!\n");
 				/* check TTL expiration */
 				if (i_hdr0->ip_ttl == 1)
 				{
@@ -378,7 +394,7 @@ void sr_handlepacket(struct sr_instance *sr,
 						/* Ethernet header */
 						e_hdr->ether_type = htons(ethertype_ip);
 						memcpy(e_hdr->ether_shost, ifc->addr, ETHER_ADDR_LEN);
-						arpentry = sr_arpcache_lookup(&(sr->cache), rtentry->gw.s_addr);
+						arpentry = sr_arpcache_lookup(&(sr->cache), i_hdr->ip_dst/*rtentry->gw.s_addr*/);
 						if (arpentry != NULL) {
 							memcpy(e_hdr->ether_dhost, arpentry->mac, ETHER_ADDR_LEN);
 							free(arpentry);
@@ -387,7 +403,7 @@ void sr_handlepacket(struct sr_instance *sr,
 						}
 						else {
 							/* queue */
-							arpreq = sr_arpcache_queuereq(&(sr->cache), rtentry->gw.s_addr, new_pck, new_len, rtentry->interface);
+							arpreq = sr_arpcache_queuereq(&(sr->cache), i_hdr->ip_dst/*rtentry->gw.s_addr*/, new_pck, new_len, rtentry->interface);
 							sr_arpcache_handle_arpreq(sr, arpreq);
 						}
 					/* done */
@@ -403,7 +419,9 @@ void sr_handlepacket(struct sr_instance *sr,
 					/* set src MAC addr */
 					memcpy(e_hdr0->ether_shost, ifc->addr, ETHER_ADDR_LEN);
 					/* refer ARP table */
-					arpentry = sr_arpcache_lookup(&(sr->cache), rtentry->gw.s_addr);
+					arpentry = sr_arpcache_lookup(&(sr->cache),i_hdr0->ip_dst/*rtentry->gw.s_addr*/);
+					fprintf(stderr, "i_hdr->ip_dst:");
+					print_addr_ip_int(i_hdr->ip_dst);
 					if (arpentry != NULL) {
 						/* set dst MAC addr */
 						memcpy(e_hdr0->ether_dhost, arpentry->mac, ETHER_ADDR_LEN);
@@ -417,7 +435,7 @@ void sr_handlepacket(struct sr_instance *sr,
 					}
 					else {
 						/* queue */
-						arpreq = sr_arpcache_queuereq(&(sr->cache), rtentry->gw.s_addr, packet, len, rtentry->interface);
+						arpreq = sr_arpcache_queuereq(&(sr->cache),i_hdr0->ip_dst/*rtentry->gw.s_addr*/, packet, len, rtentry->interface);
 						sr_arpcache_handle_arpreq(sr, arpreq);
 					/*****************************************************/
 					}
@@ -429,7 +447,7 @@ void sr_handlepacket(struct sr_instance *sr,
 			else
 			{
 				/**************** fill in code here *****************/
-
+				fprintf(stderr, "routing table miss!\n");
 				/* validation */
 				if (len_r + sizeof(struct sr_ip_hdr) < ICMP_DATA_SIZE)
 					return;
@@ -465,7 +483,7 @@ void sr_handlepacket(struct sr_instance *sr,
 					/* Ethernet header */
 					e_hdr->ether_type = htons(ethertype_ip);
 					memcpy(e_hdr->ether_shost, ifc->addr, ETHER_ADDR_LEN);
-					arpentry = sr_arpcache_lookup(&(sr->cache), rtentry->gw.s_addr);
+					arpentry = sr_arpcache_lookup(&(sr->cache),i_hdr->ip_dst/*rtentry->gw.s_addr*/);
 					if (arpentry != NULL) {
 						memcpy(e_hdr->ether_dhost, arpentry->mac, ETHER_ADDR_LEN);
 						free(arpentry);
@@ -474,7 +492,7 @@ void sr_handlepacket(struct sr_instance *sr,
 					}
 					else {
 						/* queue */
-						arpreq = sr_arpcache_queuereq(&(sr->cache), rtentry->gw.s_addr, new_pck, new_len, rtentry->interface);
+						arpreq = sr_arpcache_queuereq(&(sr->cache),i_hdr->ip_dst/*rtentry->gw.s_addr*/, new_pck, new_len, rtentry->interface);
 						sr_arpcache_handle_arpreq(sr, arpreq);
 					}
 				/* done */
@@ -503,7 +521,7 @@ void sr_handlepacket(struct sr_instance *sr,
 			if (a_hdr0->ar_op == htons(arp_op_request))
 			{
 				/**************** fill in code here *****************/
-
+				fprintf(stderr, "received ARP request!\n");
 				/* generate reply */
 				new_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr);
 				new_pck = (uint8_t *) calloc(1, new_len);
@@ -540,8 +558,10 @@ void sr_handlepacket(struct sr_instance *sr,
 			else if (a_hdr0->ar_op == htons(arp_op_reply))
 			{
 				/**************** fill in code here *****************/
-
+				fprintf(stderr, "received ARP reply!\n");
 				/* pass info to ARP cache */
+				fprintf(stderr, "a_hdr0->ar_sip:");
+				print_addr_ip_int(ntohl(a_hdr0->ar_sip));
 				arpreq = sr_arpcache_insert(&(sr->cache), a_hdr0->ar_sha, a_hdr0->ar_sip);
 				/* pending request exist */
 				if (arpreq != NULL) {
@@ -551,11 +571,15 @@ void sr_handlepacket(struct sr_instance *sr,
 						struct sr_ethernet_hdr *en_eth_hdr = (struct sr_ethernet_hdr *)(en_pck->buf);
 						struct sr_ip_hdr *en_ip_hdr = (struct sr_ip_hdr *)((uint8_t *)(en_pck->buf) + sizeof(struct sr_ethernet_hdr));
 						/* set dst MAC addr */
+						en_eth_hdr->ether_type = htons(ethertype_ip);
 						memcpy(en_eth_hdr->ether_shost, a_hdr0->ar_tha, ETHER_ADDR_LEN);
 						memcpy(en_eth_hdr->ether_dhost, a_hdr0->ar_sha, ETHER_ADDR_LEN);
+						print_hdr_eth(en_pck->buf);
 						/* decrement TTL except for self-generated packets */
 						for (ifc = sr->if_list; ifc != NULL; ifc = ifc->next) {
 							if (en_ip_hdr->ip_src == ifc->ip) {
+								fprintf(stderr, "en_ip_hdr->ip_src:");
+								print_addr_ip_int(ntohl(en_ip_hdr->ip_src));
 								matched = 1;
 								break;
 							}
@@ -566,8 +590,11 @@ void sr_handlepacket(struct sr_instance *sr,
 						/* modify checksum */
 						en_ip_hdr->ip_sum = 0;
 						en_ip_hdr->ip_sum = cksum(en_ip_hdr, sizeof(struct sr_ip_hdr));
+						print_hdr_ip((struct sr_ip_hdr *)((uint8_t *)(en_pck->buf) + sizeof(struct sr_ethernet_hdr)));
+						print_hdr_icmp((struct sr_ip_hdr *)((uint8_t *)(en_pck->buf) + sizeof(struct sr_ethernet_hdr)+sizeof(struct sr_ip_hdr)));
 						/* send */
 						sr_send_packet(sr, en_pck->buf, en_pck->len, en_pck->iface);
+						fprintf(stderr, "en_pck->iface: %s\n",en_pck->iface);
 					/* done */
 					}
 					sr_arpreq_destroy(&(sr->cache), arpreq);
